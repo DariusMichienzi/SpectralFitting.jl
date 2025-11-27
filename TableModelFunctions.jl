@@ -1,37 +1,35 @@
-using SpectralFitting, CFITSIO, ProgressMeter
-module TableModels
+using SpectralFitting, CFITSIO, ProgressMeter #not sure if you want to use something other than CFITSIO for writing files, also ProgressMeter could be removed.
+module TableModels #used module definition to be able to change my struct definitions 
 using SpectralFitting
 
-mutable struct TableParameter{T}
-    _param::FitParam{T}
-    name::String
-    num_vals::Int
-    logged::Bool
+mutable struct TableParameter{T} #parameter used in the table model
+    _param::FitParam{T} 
+    name::String 
+    num_vals::Int #number of values evaluated for in the table model
+    logged::Bool #if true the paraters evalated are over a logged range
 end
-TableParameter(_param, name; num_vals=10, logged=false) = TableParameter(_param, name, num_vals, logged)
+TableParameter(_param, name; num_vals=10, logged=false) = TableParameter(_param, name, num_vals, logged) 
 
-mutable struct TableModel
+mutable struct TableModel #table model struct.
     free_params::Vector
     frozen_params::Vector
     Spectra_Units::String
-    Out_Path::String
+    Out_Path::String #ouput file path/name
     Redshift::Bool
     Escale::Bool
-    E_units::String
-    E_min::Float64
-    E_max::Float64
-    E_bins::Int
+    E_units::String #energy units
+    E_min::Float64  #minmum energy of spectrum
+    E_max::Float64 #maximum energy of spectrum
+    E_bins::Int #number of energy bins
 end
 TableModel(free_params, frozen_params; Spectra_Units="photons/cm^2/s", Out_Path="Table_Model.fits", Redshift=false, Escale=false, E_units="keV", E_min=0.5, E_max=70.0, E_bins = 1000) = TableModel(free_params, frozen_params, Spectra_Units, Out_Path, Redshift, Escale, E_units, E_min, E_max, E_bins)
 end
 
-##
-
-function ReplaceGreek(s, mapping)
+function ReplaceGreek(s, mapping) #this function repleaces any greek letters in paramter names to regular letters to comply with the fits standard 
     return join([get(mapping, c, string(c)) for c in s])
 end
 
-function addparams(A,B)
+function addparams(A,B) #for creating the paramters table PARAMVAL column. 'Adds' two vectors of paramters together to create a single vector iterating through all their combinations
     out = []
     for a in A
         for b in B
@@ -41,7 +39,7 @@ function addparams(A,B)
     return out
 end
 
-function multiplyparams(V)
+function multiplyparams(V) #for creating the paramters table PARAMVAL column. Takes the vector of vectors of parameter values and 'multiplies' out to ctrate a single vector of all their possible combinations
     out = V[1]
     for i in 2:length(V)
         out = addparams(out,V[i])
@@ -49,19 +47,19 @@ function multiplyparams(V)
     return out
 end
 
-function MakeTable(model)
+function MakeTable(model) #takes any spectral fitting model and creates the initial table model structure.
     full_model_vals , model_names = SpectralFitting._all_parameters_with_names(model)
 
-if typeof(model).name.name == :CompositeModel
+if typeof(model).name.name == :CompositeModel #should handle composite or non composite models. 
     full_model_names = model_names
 else
     full_model_names = String.(stack(split.(model_names,"."))[2,:])
 end
 
-deleteat!(full_model_vals, findall(x-> occursin(r"(?<!\.)\bK\b|\.K",x),full_model_names))
+deleteat!(full_model_vals, findall(x-> occursin(r"(?<!\.)\bK\b|\.K",x),full_model_names)) #removes normalisation paramters as they aren't needed
 deleteat!(full_model_names, findall(x-> occursin(r"(?<!\.)\bK\b|\.K",x),full_model_names))
 
-NamestoValues = Dict(full_model_names.=>full_model_vals)
+NamestoValues = Dict(full_model_names.=>full_model_vals) 
 
 free_param_names = filter(x -> SpectralFitting.isfree(NamestoValues[x]), full_model_names)
 free_param_values = filter(x -> SpectralFitting.isfree(x), full_model_vals)
@@ -70,36 +68,18 @@ frozen_param_names = filter(x -> !SpectralFitting.isfree(NamestoValues[x]), full
 frozen_param_values = filter(x -> !SpectralFitting.isfree(x), full_model_vals)
 
 free_table_params = TableModels.TableParameter.(free_param_values,free_param_names)
-frozen_table_params = TableModels.TableParameter.(frozen_param_values,frozen_param_names)
+frozen_table_params = TableModels.TableParameter.(frozen_param_values,frozen_param_names) 
 
-#= begin
-    println()
-    println("Table model with $(length(free_table_params)) parameters")
-    print("Spectra Units = ")
-    printstyled(T.Spectra_Units, color = :cyan)
-    print(", Energy Units = ")
-    printstyled(T.E_units, color = :cyan)
-    print(", Output Path = ")
-    printstyled(T.Out_Path, color = :cyan)
-    println()
-    print("Energy grid range = ")
-    printstyled("($(T.E_min) - $(T.E_max))$(T.E_units)",color = :cyan)
-    println()
-    println("Paramters include:")
-    print("    Redshift = ")
-    printstyled(T.Redshift, color = :cyan)
-    println()
-    print("    Escale = ")
-    printstyled(T.Escale, color = :cyan)
-end =#
+# this is where I originaly had a print statment similar to when a model is called in SpectralFitting.
+    
 return TableModels.TableModel(free_table_params,frozen_table_params)
 
 end
 
 
-function OutputTable(model,TableModel)
+function OutputTable(model,TableModel) #this writes the table model to the fits file. It currently takes as an argument the model and the TableModel struct. I couldn'f find a way to take just the TableModel
     Model_Name = splitpath(TableModel.Out_Path)[end]
-    file_name = splitpath(TableModel.Out_Path)[end]
+    file_name = splitpath(TableModel.Out_Path)[end] #this section hopfully handles whatever is used as Out_Path for writing the fits file to 
     if length(file_name) <5 
         file_name *= ".fits"
         TableModel.Out_Path *= ".fits"
@@ -109,7 +89,7 @@ function OutputTable(model,TableModel)
     elseif file_name[end-4:end] == ".fits"
         Model_Name = Model_Name[1:end-5]
     end
-
+    
     if modelkind(model) == Additive()
         AddModel = "T"
     else
@@ -128,7 +108,7 @@ function OutputTable(model,TableModel)
         ESCALE = "F"
     end
 
-
+    #dictionary to convert from greek letters to english text. If you can find a better way to do this please do it. 
     greek_map = Dict(
         'α' => "alpha",  'β' => "beta",  'γ' => "gamma",  'δ' => "delta",
         'ϵ' => "epsilon",  'ζ' => "zeta",  'η' => "eta",  'θ' => "theta",
@@ -143,7 +123,7 @@ function OutputTable(model,TableModel)
         'Ρ' => "Rho",  'Σ' => "Sigma",  'Τ' => "Tau",  'Υ' => "Upsilon",
         'Φ' => "Phi", 'Χ' => "Chi", 'Ψ' => "Psi", 'Ω' => "Omega")
 
-# Primary Header 
+# Writing the Primary Header 
 
 f = fits_clobber_file(TableModel.Out_Path)
 fits_create_empty_img(f)
@@ -161,7 +141,6 @@ fits_write_key(f,"HDUVERS", "1.1.0", "format version")
 
 # Parameters 
 
-
 free_param_names = [ReplaceGreek(x.name,greek_map) for x in TableModel.free_params]
 free_param_values = [x._param for x in TableModel.free_params]
 logged = [Int(x.logged) for x in TableModel.free_params]
@@ -175,7 +154,7 @@ for P in TableModel.free_params
         push!(params,collect(range(SpectralFitting.get_lowerlimit(P._param),SpectralFitting.get_upperlimit(P._param),P.num_vals)))
     end
 end
-
+# Writing the Parameters Table
 PARAMETERS_colsdef = [("NAME", "12A", ""),("METHOD", "J", ""),("INITIAL", "E", ""),("DELTA", "E", ""),("MINIMUM", "E", ""),("BOTTOM", "E", ""),("TOP", "E", ""),("MAXIMUM", "E", ""),("NUMBVALS", "J", ""),("VALUE", string(maximum(NumbVals))*"E", "")]
 fits_create_binary_tbl(f, 0, PARAMETERS_colsdef, "PARAMETERS")
 fits_write_col(f, 1, 1, 1, free_param_names)
@@ -201,7 +180,7 @@ fits_write_key(f,"HDUCLAS1", "XSPEC TABLE MODEL", "")
 fits_write_key(f,"HDUCLAS2", "PARAMETERS", "")
 fits_write_key(f,"HDUVERS", "1.0.0", "format version")
 
-# Energies
+# Writing the Parameters Table
 
 ENERGIES_colsdef = [("ENERG_LO", "E", TableModel.E_units),("ENERG_HI", "E", TableModel.E_units)]
 fits_create_binary_tbl(f, TableModel.E_bins, ENERGIES_colsdef, "ENERGIES")
@@ -216,7 +195,7 @@ fits_write_key(f,"HDUCLAS1", "XSPEC TABLE MODEL", "")
 fits_write_key(f,"HDUCLAS2", "ENERGIES", "")
 fits_write_key(f,"HDUVERS", "1.0.0", "format version")
 
-# Spectra
+# Writing the Spectrums Table
 
 iter_params = multiplyparams(params)
 
@@ -247,21 +226,11 @@ close(f)
 end
 
 ##
-model.θ.lower_limit = 5
-model.θ.upper_limit = 85
 
-model.a.frozen = false
-model.a.lower_limit = 2
-model.a.upper_limit = 4
-
-model.E.frozen=true
-
-model
+# this is the rough way to make the table model. First call MakeTable() on the model. The model should have desired paramters unfrozen and limits on those apropriatly set
 
 TableModel = MakeTable(model)
+#this is where a print out allowing you to easly change parameters would be usefull
 
-TableModel.Out_Path = "Laor_Table"
-TableModel.E_bins = 500
-TableModel.E_max = 12
-
+# then call the TableModel and the model to OutputTable() to write the fits file
 OutputTable(model,TableModel)
