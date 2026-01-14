@@ -208,7 +208,11 @@ fits_write_col(f, 1, 1, 1, vec(stack(iter_params)))
     for i in eachindex(ps)
         symbol_name = split(TableModel.free_params[i].name,".")
         if length(symbol_name) == 2
-            setproperty!(getproperty(model,Symbol(symbol_name[1])), Symbol(symbol_name[2]), ps[i])
+            try 
+                setproperty!(getproperty(model,Symbol(symbol_name[1])), Symbol(symbol_name[2]), ps[i])
+            catch
+                setproperty!(getproperty(getproperty(model,Symbol(symbol_name[1])),:model), Symbol(symbol_name[2]), ps[i])
+            end
         else
             setproperty!(model,Symbol(symbol_name[1]),ps[i])
         end
